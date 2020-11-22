@@ -1,0 +1,10 @@
+/cvp
+
+*.o
+*.a
+
+*.gz
+
+__pycache__
+
+results/*.txt

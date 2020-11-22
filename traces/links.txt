@@ -1,0 +1,6 @@
+http://hpca23.cse.tamu.edu/CVP-1/public_traces/cvp1_public_traces.tar.gz
+http://hpca23.cse.tamu.edu/CVP-1/secret_traces/cvp1_secret_compute_fp.tar.gz
+http://hpca23.cse.tamu.edu/CVP-1/secret_traces/cvp1_secret_compute_int.tar.gz
+http://hpca23.cse.tamu.edu/CVP-1/secret_traces/cvp1_secret_crypto.tar.gz
+http://hpca23.cse.tamu.edu/CVP-1/secret_traces/cvp1_secret_srv_part1.tar.gz
+http://hpca23.cse.tamu.edu/CVP-1/secret_traces/cvp1_secret_srv_part2.tar.gz
