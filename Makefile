@@ -26,8 +26,9 @@ OPT = -O3
 LIBS = -lcvp -lz
 FLAGS = -std=c++11 -L./lib $(LIBS) $(OPT)
 
+OBJ_REF = refpredictor.o
 OBJ = mypredictor.o
-DEPS = cvp.h mypredictor.h
+DEPS = cvp.h mypredictor.h refpredictor.h
 
 DEBUG=0
 ifeq ($(DEBUG), 1)
@@ -37,10 +38,13 @@ endif
 
 .PHONY: clean lib
 
-all: cvp
+all: cvp cvp_ref
 
 lib:
 	make -C $@ DEBUG=$(DEBUG)
+
+cvp_ref: $(OBJ_REF) | lib
+	$(CC) $(FLAGS) -o $@ $^
 
 cvp: $(OBJ) | lib
 	$(CC) $(FLAGS) -o $@ $^

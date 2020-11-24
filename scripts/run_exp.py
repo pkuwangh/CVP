@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import multiprocessing
 import os
 from concurrent.futures import ProcessPoolExecutor
 from os.path import join as joinpath
@@ -35,15 +36,22 @@ def get_trace_list(args) -> List[str]:
         exit(-1)
 
 
-def run(args) -> None:
+def get_outfile(args, tracefile: str):
     root_path = get_root_path(__file__, 1)
+    tracefile_name = os.path.basename(tracefile)
+    suite_name = os.path.basename(get_root_path(tracefile, 1))
+    outfile_name = suite_name + '_' + tracefile_name.replace('.gz', f'_{args.config}.txt')
+    outfile = os.path.join(root_path, 'results', outfile_name)
+    return outfile
+
+
+def run(args) -> None:
     with ProcessPoolExecutor(max_workers=12) as executor:
+        lock = multiprocessing.Manager().RLock()
         for infile in get_trace_list(args):
-            tracefile_name = os.path.basename(infile)
-            suite_name = os.path.basename(get_root_path(infile, 1))
-            outfile_name = suite_name + '_' + tracefile_name.replace('.gz', '.txt')
-            outfile = os.path.join(root_path, 'results', outfile_name)
-            executor.submit(runner, infile, args.config, outfile)
+            outfile = get_outfile(args, infile)
+            executor.submit(
+                runner, lock, infile, args.binary, args.config, outfile)
 
 
 def init_parser() -> argparse.ArgumentParser:
@@ -61,6 +69,9 @@ def init_parser() -> argparse.ArgumentParser:
     info_parser.add_argument('--suites', '-s', action='store_true',
         help='list trace suites')
     # run configs
+    run_parser.add_argument('--binary', '-b', type=str, required=True,
+        choices=['ref', 'my',],
+        help='binary version')
     run_parser.add_argument('--config', '-c', type=str, required=True,
         choices=['base', 'vp0_all', 'vp1_load', 'vp2_miss',],
         help='run config')

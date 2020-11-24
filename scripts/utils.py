@@ -34,13 +34,15 @@ def launch_proc(
 
 
 def runner(
+    lock,
     trace: str,
+    binary: str,
     config: str,
     outfile: Optional[str] = None
 ) -> None:
     print(f'running {trace}')
     root_path = get_root_path(__file__, 1)
-    cvp_bin = joinpath(root_path, 'cvp')
+    cvp_bin = joinpath(root_path, 'cvp_ref' if binary == 'ref' else 'cvp')
     cmd = [cvp_bin]
     if config.startswith('vp'):
         cmd.append('-v')
@@ -50,6 +52,11 @@ def runner(
     proc = launch_proc(cmd, outfile)
     proc.wait()
     if outfile:
-        print(f'Output written to {outfile}')
+        with lock:
+            print(f'Output written to {os.path.relpath(outfile)}')
+            with open(outfile, 'rt') as fp:
+                for line in fp.readlines():
+                    if line.lstrip().startswith('IPC'):
+                        print(line.rstrip())
     else:
         print(proc.stdout.decode('utf-8'))

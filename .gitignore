@@ -1,4 +1,5 @@
 /cvp
+/cvp_ref
 
 *.o
 *.a

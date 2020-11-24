@@ -29,7 +29,9 @@ def main(args):
         tags.append('secret')
     for tag in tags:
         for link in links[tag]:
-            cmd = f'http_proxy=fwdproxy:8080 wget {link}'
+            cmd = f'wget {link}'
+            if args.fwdproxy:
+                cmd = 'http_proxy=fwdproxy:8080 ' + cmd
             try:
                 os.system(cmd)
             except Exception as e:
@@ -43,6 +45,8 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--list', '-l', action='store_true',
         help='list traces')
+    parser.add_argument('--fwdproxy', '-f', action='store_true',
+        help='use fwdproxy')
     parser.add_argument('--public', '-p', action='store_true',
         help='download small public traces')
     parser.add_argument('--secret', '-s', action='store_true',
