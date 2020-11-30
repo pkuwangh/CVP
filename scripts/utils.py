@@ -19,7 +19,7 @@ def launch_proc(
 ) -> subprocess.Popen:
     if filename:
         with open(filename, 'wt') as fp:
-            fp.write(' '.join(cmd))
+            fp.write(' '.join(cmd) + '\n')
             return subprocess.Popen(
                 cmd,
                 stdout=fp,
@@ -39,8 +39,7 @@ def runner(
     binary: str,
     config: str,
     outfile: Optional[str] = None
-) -> None:
-    print(f'running {trace}')
+) -> str:
     root_path = get_root_path(__file__, 1)
     cvp_bin = joinpath(root_path, 'cvp_ref' if binary == 'ref' else 'cvp')
     cmd = [cvp_bin]
@@ -53,10 +52,11 @@ def runner(
     proc.wait()
     if outfile:
         with lock:
-            print(f'Output written to {os.path.relpath(outfile)}')
             with open(outfile, 'rt') as fp:
                 for line in fp.readlines():
                     if line.lstrip().startswith('IPC'):
-                        print(line.rstrip())
+                        ipc = line.rstrip().split()[-1]
+                        return f'{trace:<80s}{ipc:<10s}'
     else:
         print(proc.stdout.decode('utf-8'))
+        return ""
