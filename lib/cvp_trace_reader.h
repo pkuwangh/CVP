@@ -283,7 +283,7 @@ struct CVPTraceReader
     if(dpressed_input)
       delete dpressed_input;
 
-    std::cout  << " Read " << nInstr << " instrs " << std::endl;
+    std::cout  << "Read " << nInstr << " instrs " << std::endl;
   }
 
   // This is the main API function
@@ -424,6 +424,10 @@ struct CVPTraceReader
     start_fp_reg = 0;
     dpressed_input->read((char*) &mInstr.mPc, sizeof(mInstr.mPc));
 
+    //if (nInstr > 100000) {
+    //  return false;
+    //}
+
     if(dpressed_input->eof())
       return false;
 
@@ -503,11 +507,9 @@ struct CVPTraceReader
 
     nInstr++;
 
-    if(nInstr % 100000 == 0)
+    if(nInstr % 1000000 == 0)
       std::cout << nInstr << " instrs " << std::endl;
 
     return true;
   }
 };
-
-

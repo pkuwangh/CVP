@@ -70,10 +70,10 @@ bool bp_t::predict(InstClass insn, uint64_t pc, uint64_t next_pc) {
 
       // Make prediction.
       pred_taken= TAGESCL->GetPrediction (pc);
-      
+
       // Determine if mispredicted or not.
       misp = (pred_taken != taken);
-      
+
       /* A. Seznec: uodate TAGE-SC-L*/
       TAGESCL-> UpdatePredictor (pc , 1,  taken, pred_taken, next_pc);
       // Update measurements.
@@ -87,7 +87,7 @@ bool bp_t::predict(InstClass insn, uint64_t pc, uint64_t next_pc) {
       // or the pre-decode/decode stage (BTB miss), so these are not predicted.
       // Never mispredicted.
       misp = false;
-      
+
       /* A. Seznec: update branch  histories for TAGE-SC-L and ITTAGE */
       TAGESCL->TrackOtherInst(pc , 0,  true,next_pc);
       ITTAGE->TrackOtherInst(pc , next_pc);
@@ -107,13 +107,13 @@ bool bp_t::predict(InstClass insn, uint64_t pc, uint64_t next_pc) {
       // RISCV ISA spec, Table 2.1, explains rules for inferring a return instruction.
       if (is_link_reg(insn.rs1()) && (!is_link_reg(insn.rd()) || (insn.rs1() != insn.rd()))) {
          // RETURN
- 
+
          // Make prediction.
 	 pred_target = ras.pop();
 
          // Determine if mispredicted or not.
          misp = (pred_target != next_pc);
- 
+
          // Update measurements.
          meas_jumpret_n++;
          if (misp) meas_jumpret_m++;
@@ -132,10 +132,10 @@ bool bp_t::predict(InstClass insn, uint64_t pc, uint64_t next_pc) {
 
          // Determine if mispredicted or not.
          misp = (pred_target != next_pc);
-      
+
          /* A. Seznec: update ITTAGE*/
          ITTAGE-> UpdatePredictor (pc , next_pc);
-      
+
          // Update measurements.
          meas_jumpind_n++;
          meas_jumpind_m += misp;
@@ -173,7 +173,7 @@ inline bool bp_t::is_link_reg(uint64_t x) {
 void bp_t::output() {
    uint64_t num_inst = (meas_branch_n + meas_jumpdir_n + meas_jumpind_n + meas_jumpret_n + meas_notctrl_n);
    uint64_t num_misp = (meas_branch_m + meas_jumpind_m + meas_jumpret_m + meas_notctrl_m);
-   printf("BRANCH PREDICTION MEASUREMENTS---------------------\n");
+   printf("----------------BRANCH PREDICTION MEASUREMENTS-----\n");
    printf("Type                      n          m     mr  mpki\n");
    BP_OUTPUT("All              ", num_inst, num_misp, num_inst);
    BP_OUTPUT("Branch           ", meas_branch_n, meas_branch_m, num_inst);
@@ -182,4 +182,3 @@ void bp_t::output() {
    BP_OUTPUT("Jump: Return     ", meas_jumpret_n, meas_jumpret_m, num_inst);
    BP_OUTPUT("Not control      ", meas_notctrl_n, meas_notctrl_m, num_inst);
 }
-

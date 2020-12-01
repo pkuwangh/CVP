@@ -61,7 +61,7 @@ uarchsim_t::uarchsim_t():BP(20,16,20,16,64),window(WINDOW_SIZE),
 
    num_inst = 0;
    cycle = 0;
- 
+
    // CVP measurements
    num_eligible = 0;
    num_correct = 0;
@@ -97,7 +97,7 @@ PredictionRequest uarchsim_t::get_prediction_req_for_track(uint64_t cycle, uint6
    case VPTracks::LoadsOnlyHitMiss:
    {
          req.is_candidate = inst->is_load;
-     
+
          if(req.is_candidate)
          {
             req.cache_hit = HitMissInfo::Miss;
@@ -128,7 +128,7 @@ uint64_t uarchsim_t::get_load_exec_cycle(db_t *inst) const
 {
    uint64_t exec_cycle = fetch_cycle;
 
-   // No need to re-access ICache because fetch_cycle has already been updated    
+   // No need to re-access ICache because fetch_cycle has already been updated
    exec_cycle = exec_cycle + PIPELINE_FILL_LATENCY;
 
    if (inst->A.valid) {
@@ -152,7 +152,7 @@ uint64_t uarchsim_t::get_load_exec_cycle(db_t *inst) const
    return exec_cycle;
 }
 
-void uarchsim_t::step(db_t *inst) 
+void uarchsim_t::step(db_t *inst)
 {
    spdlog::debug("Stepping, FC: {}",fetch_cycle);
 
@@ -162,7 +162,7 @@ void uarchsim_t::step(db_t *inst)
    piece = ((inst->pc == prev_pc) ? (piece + 1) : 0);
    prev_pc = inst->pc;
 
- 
+
    /////////////////////////////
    // Manage window: retire.
    /////////////////////////////
@@ -171,14 +171,14 @@ void uarchsim_t::step(db_t *inst)
       if (VP_ENABLE && !VP_PERFECT)
          updatePredictor(w.seq_no, w.addr, w.value, w.latency);
    }
- 
+
    // CVP variables
    uint64_t seq_no = num_inst;
    bool predictable = (inst->D.valid && (inst->D.log_reg != RFFLAGS));
    PredictionResult pred;
    bool squash = false;
    uint64_t latency;
-   // 
+   //
    // Schedule the instruction's execution cycle.
    //
    uint64_t i;
@@ -216,7 +216,7 @@ void uarchsim_t::step(db_t *inst)
    else {
       pred.speculate = false;
    }
- 
+
    exec_cycle = fetch_cycle + PIPELINE_FILL_LATENCY;
 
    if (inst->A.valid) {
@@ -243,7 +243,7 @@ void uarchsim_t::step(db_t *inst)
    }
 
    if (inst->is_load) {
-     
+
       latency = exec_cycle;	// record start of execution
 
       // AGEN takes 1 cycle.
@@ -256,7 +256,7 @@ void uarchsim_t::step(db_t *inst)
          // Instruction PC will be 4B aligned.
          prefetcher.lookahead((inst->pc >> 2), fetch_cycle);
 
-         // Train the prefetcher 
+         // Train the prefetcher
          const bool hit = L1.is_hit(exec_cycle, inst->addr);
          PrefetchTrainingInfo info{inst->pc >> 2, inst->addr, 0, hit};
          prefetcher.train(info);
@@ -341,7 +341,7 @@ void uarchsim_t::step(db_t *inst)
                spdlog::debug("Could not find empty LDST slot for PF this cycle, increasing");
             }
          }
-         
+
          if(!issued)
          {
             prefetcher.put_back(p);
@@ -357,9 +357,9 @@ void uarchsim_t::step(db_t *inst)
    // Update destination register timestamp.
    if (inst->D.valid) {
       assert(inst->D.log_reg < RFSIZE);
-      if (inst->D.log_reg != RFFLAGS) 
+      if (inst->D.log_reg != RFFLAGS)
       {
-         squash = (pred.speculate && (pred.predicted_value != inst->D.value));         
+         squash = (pred.speculate && (pred.predicted_value != inst->D.value));
          RF[inst->D.log_reg] = ((pred.speculate && (pred.predicted_value == inst->D.value)) ? fetch_cycle : exec_cycle);
       }
    }
@@ -490,14 +490,13 @@ void uarchsim_t::output() {
    printf("PIPELINE_FILL_LATENCY = %ld\n", PIPELINE_FILL_LATENCY);
    printf("NUM_LDST_LANES = %ld%s", NUM_LDST_LANES, ((NUM_LDST_LANES > 0) ? "\n" : " (unbounded)\n"));
    printf("NUM_ALU_LANES = %ld%s", NUM_ALU_LANES, ((NUM_ALU_LANES > 0) ? "\n" : " (unbounded)\n"));
-   //BP.output();
-   printf("MEMORY HIERARCHY CONFIGURATION---------------------\n");
+   printf("----------------MEMORY HIERARCHY CONFIGURATION-----\n");
    printf("STRIDE Prefetcher = %s\n", PREFETCHER_ENABLE ? "1" : "0");
    printf("PERFECT_CACHE = %s\n", (PERFECT_CACHE ? "1" : "0"));
    printf("WRITE_ALLOCATE = %s\n", (WRITE_ALLOCATE ? "1" : "0"));
    printf("Within-pipeline factors:\n");
    printf("\tAGEN latency = 1 cycle\n");
-   printf("\tStore Queue (SQ): SQ size = window size, oracle memory disambiguation, store-load forwarding = 1 cycle after store's or load's agen.\n");
+   printf("\tStore Queue (SQ): SQ size = window size, oracle memory disambiguation, STLF = 1 cycle after store's or load's agen.\n");
    printf("\t* Note: A store searches the L1$ at commit. The store is released\n");
    printf("\t* from the SQ and window, whether it hits or misses. Store misses\n");
    printf("\t* are buffered until the block is allocated and the store is\n");
@@ -514,11 +513,11 @@ void uarchsim_t::output() {
    printf("L3$: %ld %s, %ld-way set-assoc., %ldB block size, %ld-cycle search latency\n",
    	  SCALED_SIZE(L3_SIZE), SCALED_UNIT(L3_SIZE), L3_ASSOC, L3_BLOCKSIZE, L3_LATENCY);
    printf("Main Memory: %ld-cycle fixed search time\n", MAIN_MEMORY_LATENCY);
-   printf("STORE QUEUE MEASUREMENTS---------------------------\n");
+   printf("----------------STORE QUEUE MEASUREMENTS-----------\n");
    printf("Number of loads: %ld\n", num_load);
    printf("Number of loads that miss in SQ: %ld (%.2f%%)\n", num_load_sqmiss, 100.0*(double)num_load_sqmiss/(double)num_load);
    printf("Number of PFs issued to the memory system %ld\n", stat_pfs_issued_to_mem);
-   printf("MEMORY HIERARCHY MEASUREMENTS----------------------\n");
+   printf("----------------MEMORY HIERARCHY MEASUREMENTS------\n");
    if (FETCH_MODEL_ICACHE) {
       printf("I$:\n"); IC.stats();
    }
@@ -526,15 +525,14 @@ void uarchsim_t::output() {
    printf("L2$:\n"); L2.stats();
    printf("L3$:\n"); L3.stats();
    BP.output();
-   printf("ILP LIMIT STUDY------------------------------------\n");
-   printf("instructions = %ld\n", num_inst);
-   printf("cycles       = %ld\n", cycle);
-   printf("IPC          = %.3f\n", ((double)num_inst/(double)cycle));
-   printf("Prefetcher------------------------------------------\n");
+   printf("----------------Prefetcher-------------------------\n");
    prefetcher.print_stats();
-   printf("CVP STUDY------------------------------------------\n");
+   printf("----------------CVP STUDY--------------------------\n");
    printf("prediction-eligible instructions = %ld\n", num_eligible);
    printf("correct predictions              = %ld (%.2f%%)\n", num_correct, (100.0*(double)num_correct/(double)num_eligible));
    printf("incorrect predictions            = %ld (%.2f%%)\n", num_incorrect, (100.0*(double)num_incorrect/(double)num_eligible));
- 
+   printf("----------------ILP LIMIT STUDY--------------------\n");
+   printf("instructions = %ld\n", num_inst);
+   printf("cycles       = %ld\n", cycle);
+   printf("IPC          = %.3f\n", ((double)num_inst/(double)cycle));
 }
