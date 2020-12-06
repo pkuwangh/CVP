@@ -1,21 +1,17 @@
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
-#include <vector>
 
 #include "cvp.h"
 #include "mypredictor.h"
 
-namespace implementation {
-
-}
-
 namespace analysis {
 
 ImemInst::ImemInst(const DynInst::Handle& dynamic_inst) {
-  pc_str_ = dynamic_inst->getPcStr();
+  pc_str_ = Utils::getPcStr(dynamic_inst->pc_, dynamic_inst->piece_);
   inst_class_ = dynamic_inst->inst_class_;
   is_candidate_ = dynamic_inst->is_candidate_;
   dst_reg_ = dynamic_inst->dst_reg_;
@@ -153,11 +149,12 @@ void InstTracker::addInstRetire(const uint64_t& seq_no,
   } else {
     auto& dynamic_inst = inflight_insts_[seq_no];
     dynamic_inst->setFinalInfo(addr, value, latency);
-    if (tracked_insts_.count(dynamic_inst->getPcStr()) == 0) {
+    const std::string pc_str = Utils::getPcStr(dynamic_inst->pc_, dynamic_inst->piece_);
+    if (tracked_insts_.count(pc_str) == 0) {
       ImemInst::Handle imem_inst = std::make_shared<ImemInst>(dynamic_inst);
-      tracked_insts_[dynamic_inst->getPcStr()] = imem_inst;
+      tracked_insts_[pc_str] = imem_inst;
     }
-    tracked_insts_[dynamic_inst->getPcStr()]->addDynInst(dynamic_inst);
+    tracked_insts_[pc_str]->addDynInst(dynamic_inst);
     pattern_recorder_->addInsts(dynamic_inst->pc_, dynamic_inst->piece_, value);
   }
   // remove flushed insts
@@ -258,10 +255,179 @@ void PatternRecorder::dumpPattern() {
 
 }
 
-// global structures
-// ---------------- for analysis only ----------------
-static std::unique_ptr<analysis::InstTracker> inst_tracker_ = nullptr;
-// ---------------- real hardware ----------------
+
+namespace predictor {
+
+uint64_t SingleStrideEntry::calcTag(const uint64_t& pc, const uint32_t& piece) {
+  return pc + static_cast<uint64_t>(piece);
+}
+
+bool SingleStrideEntry::isTagMatch(const InflightEntry& op) const {
+  return (confidence_ > 0 && tag_ == calcTag(op.pc, op.piece));
+}
+
+std::string SingleStrideEntry::getDisplayStr() const {
+  std::stringstream ss;
+  ss << pc_str_;
+  ss << " conf=" << std::dec << confidence_;
+  ss << " stride=" << std::hex;
+  if (stride_ < 0) {
+    ss << "-0x" << (-stride_);
+  } else {
+    ss << "0x" << stride_;
+  }
+  ss << " val=0x" << last_value_;
+  ss << " ptr=" << std::dec << predict_ptr_;
+  return ss.str();
+}
+
+PredictionResult SingleStrideEntry::lookup(InflightEntry &op, uint32_t num_inflights) {
+  PredictionResult result;
+  // move pointer forward
+  //++ predict_ptr_;
+  predict_ptr_ = num_inflights;
+  if (confidence_ >= conf_thd_) {
+    op.single_stride_conf_hit = true;
+    result.speculate = true;
+    result.predicted_value = last_value_ + stride_ * predict_ptr_;
+  } else {
+    result.speculate = false;
+  }
+  op.single_stride_hit = true;
+  if (logging_enable_) {
+    std::cout << getDisplayStr() << " pred=0x" << std::hex;
+    if (result.speculate) {
+      std::cout << result.predicted_value;
+    } else {
+      std::cout << "??";
+    }
+    std::cout << std::endl;
+  }
+  return result;
+}
+
+void SingleStrideEntry::specUpdate(InflightEntry& op) {
+  if (op.prediction_result == 0) {
+    // mis-prediction
+    assert(!op.single_stride_conf_hit);
+    analysis::Utils::decrConf(confidence_, conf_min_, 1);
+  } else  if (op.prediction_result == 1) {
+    // correct prediction
+    assert(op.single_stride_conf_hit);
+    analysis::Utils::incrConf(confidence_, conf_max_, 1);
+  }
+}
+
+void SingleStrideEntry::finalUpdate(const InflightEntry& op) {
+  // reference point move forward; so pointer backward
+  //-- predict_ptr_;
+  assert(confidence_ > 0);
+  assert(last_value_ != 0xdeadbeef);
+  // training
+  const int64_t curr_stride = static_cast<int64_t>(op.value - last_value_);
+  if (confidence_ == 1) {
+    confidence_ = conf_min_;
+    stride_ = curr_stride;
+  } else {
+    assert(stride_ != 0xdeadbeef);
+    if (stride_ == curr_stride) {
+      // stride repeating, enable it
+      confidence_ = conf_thd_;
+    } else {
+      confidence_ = conf_min_;
+      stride_ = curr_stride;
+    }
+  }
+}
+
+SingleStrideEntry::SingleStrideEntry(
+  InflightEntry&op, const std::string& pc_to_watch)
+{
+  confidence_ = 1;
+  tag_ = calcTag(op.pc, op.piece);
+  last_value_ = op.value;
+  stride_ = 0xdeadbeef;
+  predict_ptr_ = 0;
+  // debug
+  pc_str_ = analysis::Utils::getPcStr(op.pc, op.piece);
+  if (pc_str_ == pc_to_watch) {
+    logging_enable_ = true;
+  }
+}
+
+SingleStridePredictor::SingleStridePredictor(
+  const BaseConfigs& config,
+  uint64_t pc,
+  uint32_t piece) :
+  BasePredictor(pc, piece),
+  num_sets_ (config.ss_num_sets),
+  num_ways_ (config.ss_num_ways),
+  entries_ (num_sets_, std::vector<SingleStrideEntry::Handle>(num_ways_, nullptr)),
+  rr_ptr_ (num_sets_, 0)
+{ }
+
+uint32_t SingleStridePredictor::calcIndex(const InflightEntry& op) const {
+  const uint64_t ex_pc = op.pc + static_cast<uint64_t>(op.piece);
+  const uint64_t index = ex_pc & (((uint64_t)0x1 << num_sets_) - 1);
+  return static_cast<uint32_t>(index);
+}
+
+SingleStrideEntry::Handle SingleStridePredictor::findEntry(const InflightEntry& op) {
+  for (auto& entry : entries_[calcIndex(op)]) {
+    if (entry->isTagMatch(op)) {
+      return entry;
+    }
+  }
+  return nullptr;
+}
+
+PredictionResult SingleStridePredictor::lookup(InflightEntry& op, uint32_t num_inflights) {
+  auto entry = findEntry(op);
+  if (entry) {
+    return entry->lookup(op, num_inflights);
+  } else {
+    PredictionResult result;
+    result.speculate = false;
+    return result;
+  }
+}
+
+void SingleStridePredictor::specUpdate(InflightEntry& op) {
+  if (op.single_stride_hit) {
+    if (op.single_stride_conf_hit) {
+      if (op.prediction_result == 0) {
+        // incorrect; prepare for multi-stride training
+        op.single_stride_mis_pred = true;
+      }
+    }
+    auto entry = findEntry(op);
+    assert(entry);
+    entry->specUpdate(op);
+  }
+}
+
+void SingleStridePredictor::finalUpdate(const InflightEntry& op) {
+  auto entry = findEntry(op);
+  if (entry) {
+    entry->finalUpdate(op);
+  } else {
+    // allocate?
+  }
+}
+
+
+FuzzyMultiStrideEntry::FuzzyMultiStrideEntry() :
+  stride_count_ (2 * max_multi_stride_)
+{ }
+
+FuzzyMultiStridePredictor::FuzzyMultiStridePredictor(const BaseConfigs& config) :
+  num_sets_ (config.fms_num_sets),
+  num_ways_ (config.fms_num_ways),
+  entries_ (num_sets_, std::vector<FuzzyMultiStrideEntry::Handle>(num_ways_, nullptr)),
+  rr_ptr_ (num_sets_, 0)
+{ }
+
+}
 
 // ---------------- ---------------- ----------------
 

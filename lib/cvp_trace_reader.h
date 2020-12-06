@@ -424,9 +424,9 @@ struct CVPTraceReader
     start_fp_reg = 0;
     dpressed_input->read((char*) &mInstr.mPc, sizeof(mInstr.mPc));
 
-    //if (nInstr > 100000) {
-    //  return false;
-    //}
+    if (nInstr > 1e6) {
+      return false;
+    }
 
     if(dpressed_input->eof())
       return false;
