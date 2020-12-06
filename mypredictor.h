@@ -9,7 +9,11 @@
 #include <string>
 #include <unordered_map>
 
-namespace wangh {
+namespace implementation {
+
+}
+
+namespace analysis {
 
 class DynInst {
  public:
@@ -68,6 +72,7 @@ class DynInst {
   uint64_t latency_ = 0;
 
   friend class ImemInst;
+  friend class InstTracker;
 };
 
 class ImemInst {
@@ -107,10 +112,33 @@ class ImemInst {
   friend class InstTracker;
 };
 
+class PatternRecorder {
+ public:
+  PatternRecorder() = delete;
+  ~PatternRecorder() = default;
+  PatternRecorder(const uint64_t& pc, const uint32_t& piece) :
+    pc_ (pc),
+    piece_ (piece)
+  { }
+
+  void addInsts(const uint64_t& pc, const uint32_t& piece, const uint64_t& value);
+  void dumpPattern();
+
+ private:
+  const uint64_t pc_;
+  const uint32_t piece_;
+  std::list<uint64_t> values_;
+};
+
 class InstTracker {
  public:
-  InstTracker() = default;
+  InstTracker() = delete;
   ~InstTracker() = default;
+  InstTracker(const uint64_t& pc, const uint32_t& piece) {
+    last_retired_seq_no_ = 0;
+    total_count_ = 0;
+    pattern_recorder_.reset(new PatternRecorder(pc, piece));
+  }
 
   void addInstIssue(const uint64_t& seq_no,
       const uint64_t& pc,
@@ -132,11 +160,17 @@ class InstTracker {
 
   void dumpImem();
 
+  void dump() {
+    dumpImem();
+    pattern_recorder_->dumpPattern();
+  }
+
  private:
   uint64_t last_retired_seq_no_ = 0;
   uint64_t total_count_ = 0;
   std::unordered_map<uint64_t, DynInst::Handle> inflight_insts_;
   std::map<std::string, ImemInst::Handle> tracked_insts_;
+  std::unique_ptr<PatternRecorder> pattern_recorder_ = nullptr;
 };
 
 }

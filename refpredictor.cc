@@ -140,7 +140,9 @@ PredictionResult getPrediction(const PredictionRequest& req)
 #endif
 // the two predictions are very rarely both high confidence; when they are pick the VTAGE prediction
 
-  
+  //if (req.pc ==0xffff00000844f73c && req.piece == 0) {
+  //  U->predstride = false;
+  //}
   result.speculate = (U->predstride || U->predvtage);
   return result;
 }

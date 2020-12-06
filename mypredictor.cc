@@ -8,7 +8,11 @@
 #include "cvp.h"
 #include "mypredictor.h"
 
-namespace wangh {
+namespace implementation {
+
+}
+
+namespace analysis {
 
 ImemInst::ImemInst(const DynInst::Handle& dynamic_inst) {
   pc_str_ = dynamic_inst->getPcStr();
@@ -154,6 +158,7 @@ void InstTracker::addInstRetire(const uint64_t& seq_no,
       tracked_insts_[dynamic_inst->getPcStr()] = imem_inst;
     }
     tracked_insts_[dynamic_inst->getPcStr()]->addDynInst(dynamic_inst);
+    pattern_recorder_->addInsts(dynamic_inst->pc_, dynamic_inst->piece_, value);
   }
   // remove flushed insts
   for (uint64_t i = last_retired_seq_no_; i < seq_no; ++i) {
@@ -176,14 +181,13 @@ void InstTracker::dumpImem() {
     const float run_weight = 100.0 * run_count / total_count_;
     if (weight < 0.01) {
       if (!skipping) {
-        std::cout << " ... skipped ";
         skipping = true;
       }
       skipped_lines += 1;
       continue;
     } else {
       if (skipping) {
-        std::cout << skipped_lines << " lines." << std::endl;
+        std::cout << " ... skipped " << skipped_lines << " lines." << std::endl;
         skipped_lines = 0;
         skipping = false;
       }
@@ -198,17 +202,71 @@ void InstTracker::dumpImem() {
   std::cout << "================ IMEM End ================" << std::endl;
 }
 
+
+void PatternRecorder::addInsts(
+  const uint64_t& pc, const uint32_t& piece, const uint64_t& value) {
+  if (pc_ == pc && piece_ == piece) {
+    values_.push_back(value);
+  }
+}
+
+void PatternRecorder::dumpPattern() {
+  uint64_t last_v = 0xdeadbeef;
+  int64_t last_s = 0xdeadbeef;
+  int64_t curr_s = 0xdeadbeef;
+  uint64_t stride_start = 0xdeadbeef;
+  uint32_t stride_repeat = 0;
+  auto print_stride = [&last_s, &stride_start, &stride_repeat]() -> void {
+    if (stride_repeat > 0) {
+      std::cout << "0x" << std::hex << std::left << std::setw(16);
+      std::cout << std::setfill('0') << stride_start << std::setfill(' ');
+      if (last_s < 0) {
+        std::cout << "\t-0x" << std::setw(19) << std::left << (-last_s);
+      } else {
+        std::cout << "\t0x" << std::setw(20) << std::left << last_s;
+      }
+      std::cout << std::dec << std::setw(6) << std::right << stride_repeat;
+      std::cout << std::endl;
+    }
+  };
+  std::cout << "================ Pattern Start ================" << std::endl;
+  std::cout << "pc = 0x" << std::hex << pc_;
+  std::cout << ", piece = " << std::dec << piece_ << std::endl;
+  for (const auto& v : values_) {
+    if (last_v != 0xdeadbeef) {
+      curr_s = static_cast<int64_t>(v - last_v);
+      if (last_s != 0xdeadbeef && last_s == curr_s) {
+        stride_repeat += 1;
+      } else {
+        if (last_s != 0xdeadbeef) {
+          print_stride();
+        } else {
+          std::cout << "2nd appearance: value=0x" << std::hex << v << std::endl;
+        }
+        stride_start = v;
+        stride_repeat = 1;
+      }
+      last_s = curr_s;
+    } else {
+      std::cout << "1st appearance: value=0x" << std::hex << v << std::endl;
+    }
+    last_v = v;
+  }
+  print_stride();
+  std::cout << "================ Pattern End ================" << std::endl;
+}
+
 }
 
 // global structures
 // ---------------- for analysis only ----------------
-static wangh::InstTracker inst_tracker_;
+static std::unique_ptr<analysis::InstTracker> inst_tracker_ = nullptr;
 // ---------------- real hardware ----------------
 
 // ---------------- ---------------- ----------------
 
 PredictionResult getPrediction(const PredictionRequest& req) {
-  inst_tracker_.addInstIssue(
+  inst_tracker_->addInstIssue(
       req.seq_no, req.pc, req.piece, req.is_candidate,
       static_cast<uint32_t>(req.cache_hit));
   PredictionResult res;
@@ -228,7 +286,7 @@ void speculativeUpdate(uint64_t seq_no,
     uint64_t src2,
     uint64_t src3,
     uint64_t dst) {
-  inst_tracker_.addInstExec(
+  inst_tracker_->addInstExec(
       seq_no, static_cast<uint32_t>(insn), src1, src2, src3, dst);
 }
 
@@ -236,7 +294,7 @@ void updatePredictor(uint64_t seq_no,
     uint64_t actual_addr,
     uint64_t actual_value,
     uint64_t actual_latency) {
-  inst_tracker_.addInstRetire(
+  inst_tracker_->addInstRetire(
       seq_no, actual_addr, actual_value, actual_latency);
 }
 
@@ -249,8 +307,12 @@ void beginPredictor(int argc_other, char **argv_other) {
     std::cout << "\targv_other[" << i << "] = " << argv_other[i];
     std::cout << std::endl;
   }
+
+  inst_tracker_.reset(new analysis::InstTracker(
+    0xffff00000844f73c, 0
+  ));
 }
 
 void endPredictor() {
-  inst_tracker_.dumpImem();
+  inst_tracker_->dump();
 }
